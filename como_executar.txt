@@ -1,0 +1,34 @@
+Pré-requisitos
+Certifique-se de ter o Python instalado (versão 3.7 ou superior).
+
+Instale as dependências necessárias listadas no arquivo requirements.txt.
+Para instalar as dependências, execute o comando abaixo no terminal/prompt de comando:
+pip install -r requirements.txt
+
+Tenha uma pasta preparada contendo arquivos no formato .vtp que serão utilizados pelo programa.
+
+Executando o Programa
+Abra um terminal ou prompt de comando.
+
+Navegue até a pasta onde o arquivo Eletrodos_3d.py está localizado.
+
+Execute o código com o comando:
+
+python Eletrodos_3d.py
+
+Na interface que será exibida:
+
+Escolha a pasta contendo os arquivos .vtp. (input_Vtp)
+Use os botões e teclas conforme as instruções na interface para interagir com as malhas e os eletrodos.
+Atalhos de Teclado e Controles
+Enter: Adicionar um eletrodo na posição atual da esfera de visualização.
+Backspace: Remover o último eletrodo adicionado.
+Espaço: Ativar/Desativar o modo de controle da câmera.
+Setas do teclado: Mover a esfera de visualização (frente, trás, esquerda, direita).
+S: Salvar as malhas e posições dos eletrodos em arquivos.
+Salvando os Resultados
+Após adicionar os eletrodos, pressione S ou clique no botão "Salvar".
+Escolha os locais para salvar os arquivos:
+Um arquivo .vtp com as malhas combinadas.
+Um arquivo .txt com as coordenadas dos eletrodos.
+
