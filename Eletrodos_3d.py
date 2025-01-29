@@ -5,7 +5,7 @@ import os
 import sys
 import random
 from collections import deque  # Importar deque para usar como fila
-from PyQt5.QtWidgets import QApplication, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton
+from PyQt5.QtWidgets import QApplication, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox
 from PyQt5.QtCore import QTimer
 
 app = QApplication([])
@@ -43,10 +43,15 @@ for file_path in vtp_files:
 # Criar o plotter
 plotter = pv.Plotter()
 
+# Criar uma lista para armazenar as referências dos atores das malhas individuais
+mesh_actors = []
+
 # Adicionar cada malha ao plotter com cores diferentes, usando a paleta
 for i, mesh in enumerate(all_meshes):
     color = color_palette[i % len(color_palette)]  # Escolher a cor correspondente na paleta (circular)
-    plotter.add_mesh(mesh, color=color, opacity=0.7, label=f"Malha {i+1}: {os.path.basename(vtp_files[i])}")
+    actor = plotter.add_mesh(mesh, color=color, opacity=0.7, label=f"Malha {i+1}: {os.path.basename(vtp_files[i])}")
+    mesh_actors.append(actor)  # Armazenar referência ao ator
+
 
 # Adicionar legenda para identificar as malhas
 plotter.add_legend()
@@ -54,6 +59,7 @@ plotter.add_legend()
 # Combinar todas as malhas em uma única mesh_torso usando MultiBlock
 multi_block = pv.MultiBlock(all_meshes)
 mesh_torso = multi_block.combine()
+plotter.add_mesh(mesh_torso, opacity=0)  # Torna invisível, mas ainda pode ser usada para cálculos
 # Adicionar legenda para identificar as malhas carregadas
 plotter.add_legend()
 # Criar a esfera de preview (inicialmente no centro)
@@ -233,7 +239,7 @@ class ControlWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Controle dos Eletrodos")
-        self.setGeometry(100, 100, 300, 200)
+        self.setGeometry(100, 100, 300, 400)
 
         layout = QVBoxLayout()
         move_layout = QVBoxLayout()
@@ -296,7 +302,24 @@ class ControlWindow(QWidget):
         layout.addWidget(button_save)
         layout.addWidget(button_close)
 
+        # Criar checkboxes para alternar a visibilidade das malhas
+        self.checkboxes = []
+        for i, filename in enumerate(vtp_files):
+            checkbox = QCheckBox(f"{os.path.basename(filename)}")
+            checkbox.setChecked(True)  # Começam ticados (opacidade 0.7)
+            checkbox.stateChanged.connect(lambda state, idx=i: self.toggle_mesh_visibility(idx, state))
+            self.checkboxes.append(checkbox)
+            layout.addWidget(checkbox)
+
         self.setLayout(layout)
+
+    def toggle_mesh_visibility(self, index, state):
+        """Alterna a opacidade da mesh com base no checkbox"""
+        if state == 2:  # Marcado (opacidade normal)
+            mesh_actors[index].GetProperty().SetOpacity(0.7)
+        else:  # Desmarcado (invisível)
+            mesh_actors[index].GetProperty().SetOpacity(0.0)
+        plotter.render()  # Atualizar visualização
         
 # Criar e mostrar a segunda janela
 control_window = ControlWindow()
