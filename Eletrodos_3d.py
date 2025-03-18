@@ -22,15 +22,16 @@ if not vtp_files:
 
 # Vetor de 40 cores fixas em formato RGB (valores entre 0 e 1)
 color_palette = [
-    [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 1.0, 0.0], [1.0, 0.0, 1.0],
-    [0.0, 1.0, 1.0], [0.5, 0.5, 0.5], [0.5, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, 0.0, 0.5],
-    [0.75, 0.75, 0.75], [0.75, 0.25, 0.5], [0.25, 0.75, 0.5], [0.5, 0.25, 0.75], [0.25, 0.5, 0.75],
-    [0.75, 0.5, 0.25], [0.25, 0.25, 0.75], [0.75, 0.25, 0.25], [0.5, 0.5, 0.0], [0.0, 0.5, 0.5],
-    [0.5, 0.0, 0.5], [0.75, 0.75, 0.0], [0.0, 0.75, 0.75], [0.75, 0.0, 0.75], [1.0, 0.5, 0.0],
-    [0.0, 1.0, 0.5], [0.5, 0.0, 1.0], [1.0, 0.25, 0.25], [0.25, 1.0, 0.25], [0.25, 0.25, 1.0],
-    [1.0, 0.75, 0.25], [0.25, 1.0, 0.75], [0.75, 0.25, 1.0], [0.5, 0.75, 0.25], [0.25, 0.5, 0.75],
-    [0.75, 0.5, 0.5], [0.5, 0.75, 0.5], [0.5, 0.5, 0.75], [0.25, 0.25, 0.25], [0.75, 0.75, 0.75]
+    [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0], [1.0, 0.0, 1.0],
+    [0.0, 1.0, 1.0], [0.5, 0.5, 0.5], [0.5, 0.0, 0.0], [0.0, 0.5, 0.0],
+    [0.75, 0.75, 0.75], [0.75, 0.25, 0.5], [0.25, 0.75, 0.5], [0.75, 0.5, 0.25],
+    [0.75, 0.25, 0.25], [0.5, 0.5, 0.0], [0.0, 0.5, 0.5], [0.5, 0.0, 0.5],
+    [0.75, 0.75, 0.0], [0.0, 0.75, 0.75], [0.75, 0.0, 0.75], [1.0, 0.5, 0.0],
+    [0.0, 1.0, 0.5], [0.5, 0.0, 1.0], [1.0, 0.25, 0.25], [0.25, 1.0, 0.25],
+    [1.0, 0.75, 0.25], [0.25, 1.0, 0.75], [0.5, 0.75, 0.25], [0.75, 0.5, 0.5],
+    [0.5, 0.75, 0.5], [0.25, 0.25, 0.25], [0.75, 0.75, 0.75]
 ]
+
 
 # Carregar todas as malhas
 all_meshes = []
@@ -65,7 +66,7 @@ plotter.add_legend()
 # Criar a esfera de preview (inicialmente no centro)
 sphere_radius = 6
 preview_sphere = pv.Sphere(radius=sphere_radius)
-preview_actor = plotter.add_mesh(preview_sphere, color='blue', opacity=0.5)
+preview_actor = plotter.add_mesh(preview_sphere, color='blue', opacity=0.9)
 initial_position = np.mean(mesh_torso.points, axis=0)
 preview_actor.SetPosition(initial_position)
 
@@ -113,15 +114,26 @@ def remove_last_electrode():
     else:
         print("Nenhum eletrodo para remover.")
 
-# Função para encontrar o ponto na malha com o menor Y
-def find_lowest_y_point(mouse_position):
+def find_lowest_y_point(mouse_position, tol=None):
     closest_point_id = mesh_torso.find_closest_point(mouse_position)
     closest_point = mesh_torso.points[closest_point_id]
     x, z = closest_point[0], closest_point[2]
+    if tol is None:
+        bounds = mesh_torso.bounds  # [xmin, xmax, ymin, ymax, zmin, zmax]
+        tol = (bounds[1] - bounds[0]) * 0.001  # 1% da extensão em X, por exemplo
+    
+    # Usar norma no plano XZ para filtrar candidatos
+    mask = np.linalg.norm(mesh_torso.points[:, [0,2]] - np.array([x, z]), axis=1) < tol
+    candidates = mesh_torso.points[mask]
+    print(f"Encontrados {len(candidates)} pontos candidatos com tol={tol}")
+    
+    if candidates.size > 0:
+        lowest_y_point = candidates[np.argmin(candidates[:, 1])]
+        return lowest_y_point
+    else:
+        return closest_point
 
-    candidates = mesh_torso.points[(mesh_torso.points[:, 0] == x) & (mesh_torso.points[:, 2] == z)]
-    lowest_y_point = candidates[np.argmin(candidates[:, 1])]  # Ponto com o menor Y
-    return lowest_y_point
+
 
 # Função para atualizar a posição da esfera ao clicar com o botão esquerdo
 def on_left_click(iren, event):
@@ -184,25 +196,6 @@ def capture_key_events(iren, event):
 
 def save_files():
     global electrodes
-
-    # Diálogo para salvar o arquivo VTP
-    vtp_file_path, _ = QFileDialog.getSaveFileName(None, "Salvar malha VTP", "", "VTP files (*.vtp);;All files (*)")
-    if vtp_file_path:
-        # Criar uma lista para armazenar as malhas do torso, paciente e cubos de eletrodos
-        all_meshes = [mesh_torso, mesh_paciente]
-
-        # Adicionar um cubo verde em cada posição de eletrodo
-        for position, _ in electrodes:
-            cube = pv.Cube(center=position, x_length=6, y_length=6, z_length=6)  # Criar cubo com tamanho adequado
-            cube.cell_data["colors"] = [[0, 255, 0]] * cube.n_cells  # Define a cor verde para o cubo
-            all_meshes.append(cube)  # Adicionar o cubo à lista de malhas
-
-        # Combinar todas as malhas em uma única malha usando pv.append
-        combined_mesh = pv.append(all_meshes)
-
-        # Salvar a malha combinada em um arquivo .vtp
-        combined_mesh.save(vtp_file_path)
-        print(f"Arquivo '{vtp_file_path}' salvo com sucesso!")
 
     # Diálogo para salvar o arquivo TXT
     txt_file_path, _ = QFileDialog.getSaveFileName(None, "Salvar coordenadas dos eletrodos", "", "TXT files (*.txt);;All files (*)")
