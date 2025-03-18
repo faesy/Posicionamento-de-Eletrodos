@@ -120,7 +120,7 @@ def find_lowest_y_point(mouse_position, tol=None):
     x, z = closest_point[0], closest_point[2]
     if tol is None:
         bounds = mesh_torso.bounds  # [xmin, xmax, ymin, ymax, zmin, zmax]
-        tol = (bounds[1] - bounds[0]) * 0.001  # 1% da extensão em X, por exemplo
+        tol = (bounds[1] - bounds[0]) * 0.01  # 1% da extensão em X, por exemplo
     
     # Usar norma no plano XZ para filtrar candidatos
     mask = np.linalg.norm(mesh_torso.points[:, [0,2]] - np.array([x, z]), axis=1) < tol
@@ -136,15 +136,38 @@ def find_lowest_y_point(mouse_position, tol=None):
 
 
 # Função para atualizar a posição da esfera ao clicar com o botão esquerdo
+def find_lowest_y_for_xz(candidate_point, tol=1.0):
+    """
+    Dado um candidate_point, retorna o ponto com o menor Y dentre aqueles 
+    cuja coordenada X e Z estão dentro da tolerância (±tol) do candidate_point.
+    """
+    x_candidate, z_candidate = candidate_point[0], candidate_point[2]
+    mask = (np.abs(mesh_torso.points[:, 0] - x_candidate) < tol) & \
+           (np.abs(mesh_torso.points[:, 2] - z_candidate) < tol)
+    candidates = mesh_torso.points[mask]
+    if candidates.size > 0:
+        lowest_y_point = candidates[np.argmin(candidates[:, 1])]
+        return lowest_y_point
+    else:
+        return candidate_point
+
 def on_left_click(iren, event):
     global is_preview_active, current_preview_position
-    if is_preview_active and not is_space_pressed:  # Verificar se não está no modo de bloqueio
+    if is_preview_active and not is_space_pressed:
         mouse_pos = plotter.pick_mouse_position()
-
         if mouse_pos is not None:
-            new_position = find_lowest_y_point(mouse_pos)
-            preview_actor.SetPosition(new_position)
-            current_preview_position = new_position  # Atualizar a posição atual
+            # Obtém um ponto candidato com base na posição do clique
+            candidate_point = find_lowest_y_point(mouse_pos)
+            # Busca o ponto com menor Y para aquele X e Z (dentro da tolerância)
+            lowest_y_point = find_lowest_y_for_xz(candidate_point, tol=1.0)
+            # Se o ponto candidato não for o com menor Y, atualiza para lowest_y_point
+            if not np.isclose(candidate_point[1], lowest_y_point[1], atol=1e-3):
+                print("Atualizando posição para o ponto com menor Y na vizinhança.")
+                candidate_point = lowest_y_point
+            preview_actor.SetPosition(candidate_point)
+            current_preview_position = candidate_point
+            plotter.render()
+
 
 # Função para mover a esfera ao longo das extremidades da malha com as teclas numéricas
 def move_preview(iren, event):
