@@ -119,6 +119,10 @@ def create_or_replace_electrode(label, position):
     """
     Remove marca antiga (caso exista) e cria novo 'label' em 'position'.
     Adiciona/atualiza a lista electrodes e o dicionário electrode_actors.
+
+    REGRAS ESPECIAIS:
+    - Se label == 'COL', sempre insere no INÍCIO de electrodes (primeiro da fila).
+    - Caso contrário, insere ao final.
     """
     global electrodes, electrode_actors
 
@@ -144,10 +148,13 @@ def create_or_replace_electrode(label, position):
         always_visible=True
     )
 
-    # Guarda no dicionário
     electrode_actors[label] = (sphere_actor, text_actor)
-    # Adiciona ao final da lista => "ordem" de criação
-    electrodes.append((label, position))
+
+    # Se for 'COL', insere no INÍCIO da fila
+    if label == 'COL':
+        electrodes.insert(0, (label, position))
+    else:
+        electrodes.append((label, position))
 
     print(f"\nEletrodo ({label}) adicionado em: "
           f"X={position[0]:.2f}, Y={position[1]:.2f}, Z={position[2]:.2f}")
@@ -157,32 +164,56 @@ def create_or_replace_electrode(label, position):
 # -----------------------------
 def add_electrode():
     """
-    Quando "Adicionar Eletrodo" é clicado e a pessoa escolhe "LA":
-      1) LA na posição do preview
-      2) RA = LA espelhado no eixo X
-      3) LL = LA com z = z - 400
-      4) RL = LL espelhado no eixo X
-    Caso contrário, marca só o label escolhido (V1, V2, etc).
+    Quando "Adicionar Eletrodo" é clicado:
+      - Se label == "COL", apenas cria/atualiza esse ponto e insere no início da fila.
+      - Se label == "LA":
+         1) Marca LA na posição do preview
+         2) Se 'COL' existir, faz marcação automática de RA, LL, RL:
+            RA: reflexo de LA em rel. à COL
+            LL: LA_x-50, LA_y, LA_z-600
+            RL: reflexo de LL em rel. à COL
+      - Caso contrário, marca só esse label (V1, V2, etc.).
     """
     global preview_actor
     label = control_window.combo_label.currentText()
     pos = preview_actor.GetPosition()
 
-    if label == "LA":
-        # 1) LA
+    if label == "COL":
+        # Apenas criar/atualizar a coluna no preview
+        create_or_replace_electrode("COL", pos)
+
+    elif label == "LA":
+        # 1) Cria LA
         create_or_replace_electrode("LA", pos)
-        # 2) RA => x = -x
-        ra_pos = (-pos[0], pos[1], pos[2])
-        create_or_replace_electrode("RA", ra_pos)
-        # 3) LL => z = z - 400
-        ll_pos = (pos[0]-50, pos[1], pos[2] - 600)
-        create_or_replace_electrode("LL", ll_pos)
-        # 4) RL => x = -x de LL
-        rl_pos = (-ll_pos[0], ll_pos[1], ll_pos[2])
-        create_or_replace_electrode("RL", rl_pos)
+
+        # 2) Se COL estiver marcado, cria RA, LL, RL
+        if "COL" in electrode_actors:
+            # Pegamos a posição da coluna
+            _, col_pos = next(((lbl, p) for lbl, p in electrodes if lbl == "COL"), (None, None))
+            if col_pos is not None:
+                x_col = col_pos[0]
+
+                # RA => reflexo de LA em rel. à COL
+                # RA_x = 2*x_col - LA_x
+                ra_x = 2*x_col - pos[0]
+                ra_pos = (ra_x, pos[1], pos[2])
+                create_or_replace_electrode("RA", ra_pos)
+
+                # LL => (LA_x-50, LA_y, LA_z-600) [igual antes]
+                ll_pos = (pos[0] - 50, pos[1], pos[2] - 600)
+                create_or_replace_electrode("LL", ll_pos)
+
+                # RL => reflexo de LL em rel. à COL
+                # RL_x = 2*x_col - ll_x
+                rl_x = 2*x_col - ll_pos[0]
+                rl_pos = (rl_x, ll_pos[1], ll_pos[2])
+                create_or_replace_electrode("RL", rl_pos)
+
+        # Se COL não existe, não faz RA, LL, RL
+        # (ou seja, só LA)
 
     else:
-        # V1, V2, V3, V4, V5, V6, ou qualquer outro => Marca só esse label
+        # V1, V2, V3, V4, V5, V6, RA, LL, RL etc. => Marca só esse label
         create_or_replace_electrode(label, pos)
 
     plotter.render()
@@ -329,9 +360,9 @@ class ControlWindow(QWidget):
 
         # ComboBox com rótulos
         self.combo_label = QComboBox()
-        # Neste exemplo, RA, LL, RL ainda estão no combo
-        # Mas lembre que marcar "LA" gera tudo automaticamente
-        electrode_labels = ["V1","V2","V3","V4","V5","V6","LA","RA","LL","RL"]
+        # Inclui "COL" (coluna) como opção
+        # Lembre-se de escolher "COL" primeiro, se quiser automatizar LA -> RA/LL/RL
+        electrode_labels = ["COL","V1","V2","V3","V4","V5","V6","LA","RA","LL","RL"]
         self.combo_label.addItems(electrode_labels)
         layout.addWidget(self.combo_label)
 
@@ -572,7 +603,6 @@ class CameraControlWindow(QWidget):
 # ----------------------------------------
 #  CRIANDO JANELAS E INICIANDO APLICAÇÃO
 # ----------------------------------------
-
 control_window = ControlWindow()
 control_window.show()
 
