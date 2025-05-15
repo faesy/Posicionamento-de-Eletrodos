@@ -83,15 +83,15 @@ for i, mesh in enumerate(all_meshes):
     )
     mesh_actors.append(actor)
 
-plotter.add_legend()
+plotter.add_legend()  # Aumente os valores conforme necessário
 
 multi_block = pv.MultiBlock(all_meshes)
 mesh_torso = multi_block.combine()
 plotter.add_mesh(mesh_torso, opacity=0)
 
-plotter.add_legend()
+plotter.add_legend(size=(0, 0))
 
-# -----------------------------
+# -----------------------------s
 #  ESFERA DE PREVIEW
 # -----------------------------
 sphere_radius = 6
