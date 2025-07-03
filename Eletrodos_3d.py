@@ -5,7 +5,7 @@ import os
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, 
-    QPushButton, QCheckBox, QComboBox
+    QPushButton, QCheckBox, QComboBox, QScrollArea, QSizePolicy
 )
 from PyQt5.QtCore import QTimer
 
@@ -350,22 +350,34 @@ def move_preview2(dx=0, dz=0):
 # ---------------------------------------------------
 #   JANELA 1: CONTROLE DE ELETRODOS
 # ---------------------------------------------------
+
 class ControlWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Controle dos Eletrodos")
-        self.setGeometry(1100, 100, 300, 550)
+        self.setGeometry(1100, 100, 300, 550)  # Define posição e tamanho inicial fixo
 
-        layout = QVBoxLayout()
+        # Layout principal da janela
+        main_layout = QVBoxLayout(self)
+
+        # Scroll Area para conter os widgets
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)  # Permite redimensionamento automático
+
+        # Widget central dentro do scroll
+        scroll_widget = QWidget()
+        scroll_area.setWidget(scroll_widget)
+
+        # Layout dentro do widget do scroll
+        layout = QVBoxLayout(scroll_widget)
 
         # ComboBox com rótulos
         self.combo_label = QComboBox()
-        # Inclui "COL" (coluna) como opção
-        # Lembre-se de escolher "COL" primeiro, se quiser automatizar LA -> RA/LL/RL
         electrode_labels = ["COL","V1","V2","V3","V4","V5","V6","LA","RA","LL","RL"]
         self.combo_label.addItems(electrode_labels)
         layout.addWidget(self.combo_label)
 
+        # Botões de movimentação
         move_layout = QVBoxLayout()
         h_layout1 = QHBoxLayout()
         h_layout2 = QHBoxLayout()
@@ -401,7 +413,9 @@ class ControlWindow(QWidget):
 
         move_layout.addLayout(h_layout1)
         move_layout.addLayout(h_layout2)
+        layout.addLayout(move_layout)
 
+        # Botões principais
         button_add = QPushButton("Adicionar Eletrodo")
         button_remove = QPushButton("Remover Último Eletrodo")
         button_save = QPushButton("Salvar")
@@ -412,12 +426,12 @@ class ControlWindow(QWidget):
         button_save.clicked.connect(save_files)
         button_close.clicked.connect(lambda: sys.exit(0))
 
-        layout.addLayout(move_layout)
         layout.addWidget(button_add)
         layout.addWidget(button_remove)
         layout.addWidget(button_save)
         layout.addWidget(button_close)
 
+        # Checkboxes dos arquivos
         self.checkboxes = []
         for i, filename in enumerate(vtp_files):
             checkbox = QCheckBox(f"{os.path.basename(filename)}")
@@ -426,7 +440,11 @@ class ControlWindow(QWidget):
             self.checkboxes.append(checkbox)
             layout.addWidget(checkbox)
 
-        self.setLayout(layout)
+        # Adiciona o scroll area ao layout principal da janela
+        main_layout.addWidget(scroll_area)
+
+        # Impede redimensionamento além do tamanho inicial
+        self.setFixedSize(300, 550)
 
     def toggle_mesh_visibility(self, index, state):
         if state == 2:  # Marcado
@@ -434,6 +452,7 @@ class ControlWindow(QWidget):
         else:
             mesh_actors[index].GetProperty().SetOpacity(0.0)
         plotter.render()
+
 
 # ---------------------------------------------------
 #  JANELA 2: CONTROLE DE CÂMERA (com reset)
