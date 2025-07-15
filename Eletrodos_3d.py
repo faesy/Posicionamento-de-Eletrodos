@@ -335,6 +335,53 @@ def save_files():
                 f.write(f"Eletrodo #{idx} ({label}): "
                         f"X={position[0]:.2f}, Y={position[1]:.2f}, Z={position[2]:.2f}\n")
         print(f"Arquivo '{txt_file_path}' salvo com sucesso!")
+        
+# -------------------------------------------------
+#  IMPORTAR COORDENADAS SALVAS
+# -------------------------------------------------
+def import_files():
+    """
+    Abre um .txt salvo pelo programa, apaga quaisquer
+    eletrodos já existentes e recria todos os pontos
+    (esferas + rótulos) a partir do arquivo.
+    """
+    global electrodes, electrode_actors
+
+    txt_file_path, _ = QFileDialog.getOpenFileName(
+        None,
+        "Importar coordenadas dos eletrodos",
+        "",
+        "TXT files (*.txt);;All files (*)"
+    )
+    if not txt_file_path:
+        return  # usuário cancelou
+
+    # 1) Remove tudo que já existe
+    for sphere_act, text_act in electrode_actors.values():
+        plotter.remove_actor(sphere_act)
+        plotter.remove_actor(text_act)
+    electrodes.clear()
+    electrode_actors.clear()
+
+    # 2) Lê cada linha do arquivo e recria o ponto
+    with open(txt_file_path, "r") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                # Ex.: "Eletrodo #3 (V2): X=10.00, Y=20.00, Z=30.00"
+                label = line.split("(")[1].split(")")[0]
+                coord_str = line.split(":")[1]
+                x = float(coord_str.split("X=")[1].split(",")[0])
+                y = float(coord_str.split("Y=")[1].split(",")[0])
+                z = float(coord_str.split("Z=")[1])
+                create_or_replace_electrode(label, (x, y, z))
+            except Exception as e:
+                print(f"Erro ao ler linha:\n  {line.strip()}\n→ {e}")
+
+    plotter.render()
+    print(f"Arquivo '{txt_file_path}' importado com sucesso!")
+
 
 def move_preview2(dx=0, dz=0):
     global current_preview_position, preview_actor
@@ -420,15 +467,18 @@ class ControlWindow(QWidget):
         button_remove = QPushButton("Remover Último Eletrodo")
         button_save = QPushButton("Salvar")
         button_close = QPushButton("Fechar")
+        button_import = QPushButton("Importar")
 
         button_add.clicked.connect(add_electrode)
         button_remove.clicked.connect(remove_last_electrode)
         button_save.clicked.connect(save_files)
         button_close.clicked.connect(lambda: sys.exit(0))
+        button_import.clicked.connect(import_files)
 
         layout.addWidget(button_add)
         layout.addWidget(button_remove)
         layout.addWidget(button_save)
+        layout.addWidget(button_import) 
         layout.addWidget(button_close)
 
         # Checkboxes dos arquivos
