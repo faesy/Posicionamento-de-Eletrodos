@@ -23,42 +23,55 @@ if not vtp_files:
     raise Exception("Nenhum arquivo .vtp encontrado na pasta selecionada.")
 
 color_palette = [
-    [1.0, 0.0, 0.0],   # Vermelho
-    [0.0, 1.0, 0.0],   # Verde
-    [1.0, 1.0, 0.0],   # Amarelo
-    [0.0, 1.0, 1.0],   # Ciano
-    [0.5, 0.5, 0.5],   # Cinza médio
-    [0.5, 0.0, 0.0],   # Marrom escuro avermelhado
-    [0.0, 0.5, 0.0],   # Verde escuro
-    [0.75, 0.75, 0.0], # Amarelo Ouro
-    [0.75, 0.25, 0.0], # Laranja escuro
-    [0.25, 0.75, 0.5], # Verde água suave
-    [0.75, 0.5, 0.25], # Marrom claro
-    [0.5, 0.5, 0.0],   # Mostarda
-    [0.75, 0.75, 0.75],# Cinza claro
-    [1.0, 0.5, 0.0],   # Laranja
-    [0.0, 1.0, 0.5],   # Verde limão suave
-    [1.0, 0.25, 0.25], # Vermelho suave
-    [0.25, 1.0, 0.25], # Verde vibrante
-    [1.0, 0.75, 0.25], # Laranja claro
-    [0.25, 1.0, 0.75], # Verde-água
-    [0.5, 0.75, 0.25], # Verde amarelado
-    [0.75, 0.5, 0.5],  # Rosa queimado
-    [0.5, 0.75, 0.5],  # Verde acinzentado
-    [0.25, 0.25, 0.25],# Cinza escuro
-    [0.75, 0.6, 0.0],  # Laranja queimado
-    [0.4, 0.7, 0.3],   # Verde musgo
-    [0.0, 0.6, 0.6],   # Verde azulado médio
-    [0.8, 0.4, 0.0],   # Terracota
-    [0.6, 0.6, 0.0]    # Mostarda escura
+    [1.0, 0.0, 0.0],   [0.0, 1.0, 0.0],   [1.0, 1.0, 0.0],
+    [0.0, 1.0, 1.0],   [0.5, 0.5, 0.5],   [0.5, 0.0, 0.0],
+    [0.0, 0.5, 0.0],   [0.75, 0.75, 0.0], [0.75, 0.25, 0.0],
+    [0.25, 0.75, 0.5], [0.75, 0.5, 0.25], [0.5, 0.5, 0.0],
+    [0.75, 0.75, 0.75],[1.0, 0.5, 0.0],   [0.0, 1.0, 0.5],
+    [1.0, 0.25, 0.25], [0.25, 1.0, 0.25], [1.0, 0.75, 0.25],
+    [0.25, 1.0, 0.75], [0.5, 0.75, 0.25], [0.75, 0.5, 0.5],
+    [0.5, 0.75, 0.5],  [0.25, 0.25, 0.25],[0.75, 0.6, 0.0],
+    [0.4, 0.7, 0.3],   [0.0, 0.6, 0.6],   [0.8, 0.4, 0.0],
+    [0.6, 0.6, 0.0]
 ]
 
-all_meshes = []
+# Separar malhas para renderização e para projeção dos eletrodos
+render_meshes = []          # tudo que não for "Linha" (continua sendo exibido e com checkbox)
+render_filenames = []
+torso_proj_meshes = []      # APENAS arquivos com "torso" no nome (para snap dos eletrodos)
+torso_proj_filenames = []
+linha_raw_points = []       # lista de dicts com info para gerar plano depois
+linha_filenames = []
+
+
 for file_path in vtp_files:
+    name = os.path.basename(file_path)
     mesh = pv.read(file_path)
+
+    # "Linha" -> só para gerar planos auxiliares
+    if 'linha' in name.lower():
+        if mesh.n_points >= 3:
+            pts = np.asarray(mesh.points)
+            linha_raw_points.append({'name': name, 'points': pts})
+            linha_filenames.append(name)
+        else:
+            print(f"[AVISO] '{name}' tem menos de 3 pontos - não é possível ajustar um plano.")
+        continue
+
+    # Render: todo VTP que não é "Linha" continua visível/controlável
     if 'Normals' not in mesh.point_data:
         mesh.compute_normals(inplace=True)
-    all_meshes.append(mesh)
+    render_meshes.append(mesh)
+    render_filenames.append(name)
+
+    # Projeção: apenas nomes contendo "torso"
+    if 'torso' in name.lower():
+        torso_proj_meshes.append(mesh)
+        torso_proj_filenames.append(name)
+
+if not torso_proj_meshes:
+    raise Exception("Nenhuma malha com 'torso' no nome foi encontrada para posicionar os eletrodos.")
+
 
 # -----------------------------
 #  PLOTTER E MALHAS
@@ -74,22 +87,87 @@ plotter.camera.focal_point = INITIAL_CAM_FOCAL
 plotter.camera.azimuth = 0.0
 plotter.camera.elevation = 0.0
 
-mesh_actors = []
-for i, mesh in enumerate(all_meshes):
+# Renderizar malhas (todas que não são 'Linha')
+file_actor_map = {}
+torso_actors = []
+for i, mesh in enumerate(render_meshes):
     color = color_palette[i % len(color_palette)]
-    actor = plotter.add_mesh(
-        mesh, color=color, opacity=0.7, 
-        label=f"Malha {i+1}: {os.path.basename(vtp_files[i])}"
-    )
-    mesh_actors.append(actor)
+    actor = plotter.add_mesh(mesh, color=color, opacity=0.7,
+                             label=f"Mesh {i+1}: {render_filenames[i]}")
+    torso_actors.append(actor)
+    file_actor_map[render_filenames[i]] = actor
 
-plotter.add_legend()  # Aumente os valores conforme necessário
+plotter.add_legend()
 
-multi_block = pv.MultiBlock(all_meshes)
-mesh_torso = multi_block.combine()
-plotter.add_mesh(mesh_torso, opacity=0)
+# MultiBlock para PROJEÇÃO dos eletrodos (apenas 'torso*')
+mb_proj = pv.MultiBlock(torso_proj_meshes)
+mesh_torso_proj = mb_proj.combine()
+plotter.add_mesh(mesh_torso_proj, opacity=0)  # invisível; usado só para o snap
 
-plotter.add_legend(size=(0, 0))
+
+# Criar planos auxiliares a partir dos VTPs "Linha"
+def best_fit_plane(points: np.ndarray):
+    """
+    Retorna (centro, normal) do melhor plano por PCA.
+    """
+    c = points.mean(axis=0)
+    A = points - c
+    # Autovetores da covariância
+    _, _, vt = np.linalg.svd(A, full_matrices=False)
+    normal = vt[-1, :]  # menor autovalor → normal do plano
+    # normal normalizada
+    normal = normal / (np.linalg.norm(normal) + 1e-12)
+    return c, normal
+
+bounds = mesh_torso_proj.bounds  # (xmin,xmax,ymin,ymax,zmin,zmax)
+size_max = max(bounds[1]-bounds[0], bounds[3]-bounds[2], bounds[5]-bounds[4]) * 1.2
+if size_max <= 0:
+    size_max = 100.0  # fallback
+
+linha_plane_meshes = []
+linha_plane_actors = []
+linha_planes_info = []
+for i, item in enumerate(linha_raw_points):
+    center, normal = best_fit_plane(item['points'])
+    plane = pv.Plane(center=center, direction=normal, i_size=size_max, j_size=size_max, i_resolution=1, j_resolution=1)
+
+    # ✅ guarde os dados para o slice depois
+    linha_planes_info.append({'name': item['name'], 'center': center, 'normal': normal})
+
+    linha_plane_meshes.append(plane)
+    color = color_palette[(len(torso_proj_meshes) + i) % len(color_palette)]
+    actor = plotter.add_mesh(plane, color=color, opacity=0.25, label=f"Plano: {item['name']}")
+    linha_plane_actors.append(actor)
+    file_actor_map[item['name']] = actor
+# ---- INTERSEÇÕES TORSO x PLANOS (realce em vermelho) ----
+intersection_actors = []
+for info in linha_planes_info:
+    # Faz o slice do torso combinado por cada plano (definido por origem/normal)
+    slc = mesh_torso_proj.slice(origin=info['center'], normal=info['normal'])
+
+    if slc.n_points > 1:
+        # Tubo grosso pra destacar a linha (ajuste o raio conforme escala do teu modelo)
+        try:
+            tube = slc.tube(radius=max(size_max * 0.005, 2.0), n_sides=24)
+            actor = plotter.add_mesh(
+                tube, color=(1.0, 0.0, 0.0), opacity=1.0,
+                label=f"Interseção: {info['name']}", lighting=False
+            )
+        except Exception:
+            # fallback se tube não estiver disponível por algum motivo
+            actor = plotter.add_mesh(
+                slc, color=(1.0, 0.0, 0.0), opacity=1.0,
+                line_width=6, render_lines_as_tubes=True,
+                label=f"Interseção: {info['name']}", lighting=False
+            )
+        intersection_actors.append(actor)
+    else:
+        print(f"[AVISO] Sem interseção detectada para '{info['name']}' (slice vazio).")
+
+
+
+plotter.add_legend(size=(0, 0))  # reposicionar legenda se necessário
+
 
 # -----------------------------s
 #  ESFERA DE PREVIEW
@@ -97,7 +175,7 @@ plotter.add_legend(size=(0, 0))
 sphere_radius = 6
 preview_sphere = pv.Sphere(radius=sphere_radius)
 preview_actor = plotter.add_mesh(preview_sphere, color='blue', opacity=1)
-initial_position = np.mean(mesh_torso.points, axis=0)
+initial_position = np.mean(mesh_torso_proj.points, axis=0)
 preview_actor.SetPosition(initial_position)
 
 line_actor = None
@@ -107,10 +185,30 @@ current_preview_position = np.array(initial_position)
 # =========================================
 #  ESTRUTURAS GLOBAIS P/ ELETRODOS
 # =========================================
-electrodes = []       # [(label, (x, y, z)), ...] na ordem de criação
-electrode_actors = {} # label -> (sphere_actor, text_actor)
-
+electrodes = []
+electrode_actors = {}
 is_space_pressed = False
+
+# Novo: modo de snap
+front_snap_enabled = True  # True = fixa no Y mínimo (frente); False = gruda na superfície (laterais possíveis)
+
+def snap_point_to_torso(target_pos):
+    """
+    Retorna um ponto na superfície do torso conforme o modo:
+      - front_snap_enabled=True: usa o menor Y do vizinho (frente)
+      - front_snap_enabled=False: usa o ponto mais próximo na superfície (permite laterais)
+    """
+    target_pos = np.asarray(target_pos, dtype=float)
+
+    if front_snap_enabled:
+        # comportamento atual (frente): menor Y para o XZ selecionado
+        candidate_point = find_lowest_y_point(target_pos)
+        snapped = find_lowest_y_for_xz(candidate_point, tol=1.0)
+        return snapped
+    else:
+        # lateral/superfície: ponto mais próximo na superfície
+        pid = mesh_torso_proj.find_closest_point(target_pos)
+        return mesh_torso_proj.points[pid]
 
 # --------------------------------------
 # HELPER: cria ou substitui 1 eletrodo
@@ -241,14 +339,14 @@ def remove_last_electrode():
     print(f"Número de eletrodos restantes: {len(electrodes)}")
 
 def find_lowest_y_point(mouse_position, tol=None):
-    closest_point_id = mesh_torso.find_closest_point(mouse_position)
-    closest_point = mesh_torso.points[closest_point_id]
+    closest_point_id = mesh_torso_proj.find_closest_point(mouse_position)
+    closest_point = mesh_torso_proj.points[closest_point_id]
     x, z = closest_point[0], closest_point[2]
     if tol is None:
-        bounds = mesh_torso.bounds
+        bounds = mesh_torso_proj.bounds
         tol = (bounds[1] - bounds[0]) * 0.01
-    mask = np.linalg.norm(mesh_torso.points[:, [0,2]] - np.array([x, z]), axis=1) < tol
-    candidates = mesh_torso.points[mask]
+    mask = np.linalg.norm(mesh_torso_proj.points[:, [0,2]] - np.array([x, z]), axis=1) < tol
+    candidates = mesh_torso_proj.points[mask]
     print(f"Encontrados {len(candidates)} pontos candidatos com tol={tol}")
 
     if candidates.size > 0:
@@ -259,9 +357,9 @@ def find_lowest_y_point(mouse_position, tol=None):
 
 def find_lowest_y_for_xz(candidate_point, tol=1.0):
     x_candidate, z_candidate = candidate_point[0], candidate_point[2]
-    mask = (np.abs(mesh_torso.points[:, 0] - x_candidate) < tol) & \
-           (np.abs(mesh_torso.points[:, 2] - z_candidate) < tol)
-    candidates = mesh_torso.points[mask]
+    mask = (np.abs(mesh_torso_proj.points[:, 0] - x_candidate) < tol) & \
+           (np.abs(mesh_torso_proj.points[:, 2] - z_candidate) < tol)
+    candidates = mesh_torso_proj.points[mask]
     if candidates.size > 0:
         lowest_y_point = candidates[np.argmin(candidates[:, 1])]
         return lowest_y_point
@@ -273,13 +371,9 @@ def on_left_click(iren, event):
     if is_preview_active and not is_space_pressed:
         mouse_pos = plotter.pick_mouse_position()
         if mouse_pos is not None:
-            candidate_point = find_lowest_y_point(mouse_pos)
-            lowest_y_point = find_lowest_y_for_xz(candidate_point, tol=1.0)
-            if not np.isclose(candidate_point[1], lowest_y_point[1], atol=1e-3):
-                print("Atualizando posição para o ponto com menor Y na vizinhança.")
-                candidate_point = lowest_y_point
-            preview_actor.SetPosition(candidate_point)
-            current_preview_position = candidate_point
+            snapped = snap_point_to_torso(mouse_pos)
+            preview_actor.SetPosition(snapped)
+            current_preview_position = snapped
             plotter.render()
 
 def move_preview(iren, event):
@@ -289,7 +383,6 @@ def move_preview(iren, event):
 
     delta = 1.0
     key = iren.GetKeySym()
-
     new_position = np.copy(current_preview_position)
 
     if key == 'Up':
@@ -303,10 +396,23 @@ def move_preview(iren, event):
     else:
         return
 
-    new_position[1] = find_lowest_y_point(new_position)[1]
-    preview_actor.SetPosition(new_position)
-    current_preview_position = new_position
+    # Snap sempre à superfície/“frente” conforme o modo
+    snapped = snap_point_to_torso(new_position)
+    preview_actor.SetPosition(snapped)
+    current_preview_position = snapped
     plotter.render()
+
+def move_preview2(dx=0, dz=0):
+    global current_preview_position, preview_actor
+    delta = 1.0
+    new_position = np.copy(current_preview_position)
+    new_position[0] += dx * delta
+    new_position[2] += dz * delta
+    snapped = snap_point_to_torso(new_position)
+    preview_actor.SetPosition(snapped)
+    current_preview_position = snapped
+    plotter.render()
+
 
 def capture_key_events(iren, event):
     global is_space_pressed, key
@@ -424,7 +530,9 @@ class ControlWindow(QWidget):
         self.combo_label.addItems(electrode_labels)
         layout.addWidget(self.combo_label)
 
+        # -------------------------
         # Botões de movimentação
+        # -------------------------
         move_layout = QVBoxLayout()
         h_layout1 = QHBoxLayout()
         h_layout2 = QHBoxLayout()
@@ -462,7 +570,9 @@ class ControlWindow(QWidget):
         move_layout.addLayout(h_layout2)
         layout.addLayout(move_layout)
 
+        # -------------------------
         # Botões principais
+        # -------------------------
         button_add = QPushButton("Adicionar Eletrodo")
         button_remove = QPushButton("Remover Último Eletrodo")
         button_save = QPushButton("Salvar")
@@ -478,10 +588,39 @@ class ControlWindow(QWidget):
         layout.addWidget(button_add)
         layout.addWidget(button_remove)
         layout.addWidget(button_save)
-        layout.addWidget(button_import) 
+        layout.addWidget(button_import)
         layout.addWidget(button_close)
 
+        # -------------------------------------------------
+        # Toggle: Fixar na frente (Y mínimo) ON/OFF
+        # -------------------------------------------------
+        self.btn_toggle_front = QPushButton()
+
+        def refresh_toggle_text():
+            self.btn_toggle_front.setText(
+                "Fixar na frente (Y mínimo): ON" if front_snap_enabled
+                else "Fixar na frente (Y mínimo): OFF"
+            )
+
+        refresh_toggle_text()
+
+        def on_toggle_front():
+            # usa globals já existentes no script
+            global front_snap_enabled, current_preview_position
+            front_snap_enabled = not front_snap_enabled
+            refresh_toggle_text()
+            # Re-snap imediato do preview para aderir ao novo modo
+            snapped = snap_point_to_torso(preview_actor.GetPosition())
+            preview_actor.SetPosition(snapped)
+            current_preview_position = snapped
+            plotter.render()
+
+        self.btn_toggle_front.clicked.connect(on_toggle_front)
+        layout.addWidget(self.btn_toggle_front)
+
+        # -------------------------
         # Checkboxes dos arquivos
+        # -------------------------
         self.checkboxes = []
         for i, filename in enumerate(vtp_files):
             checkbox = QCheckBox(f"{os.path.basename(filename)}")
@@ -497,11 +636,25 @@ class ControlWindow(QWidget):
         self.setFixedSize(300, 550)
 
     def toggle_mesh_visibility(self, index, state):
-        if state == 2:  # Marcado
-            mesh_actors[index].GetProperty().SetOpacity(0.7)
-        else:
-            mesh_actors[index].GetProperty().SetOpacity(0.0)
+        fname = os.path.basename(vtp_files[index])
+        actor = file_actor_map.get(fname)
+        if actor is None:
+            # Isso é normal para arquivos "Linha" (sem actor) ou itens ignorados.
+            print(f"[AVISO] Sem actor associado para '{fname}' (possivelmente 'Linha' ou não renderizado).")
+            return
+
+        visible = (state == 2)
+
+        # Agora só controla os planos/malhas, não mexe nas interseções
+        try:
+            actor.SetVisibility(visible)
+            actor.SetPickable(visible)
+        except Exception:
+            actor.GetProperty().SetOpacity(0.7 if visible else 0.0)
+
         plotter.render()
+
+
 
 
 # ---------------------------------------------------
@@ -684,3 +837,5 @@ plotter.iren.add_observer("KeyPressEvent", capture_key_events)
 
 plotter.show()
 app.exec_()
+
+
