@@ -19,21 +19,36 @@ if not folder_path:
     raise Exception("Nenhuma pasta selecionada.")
 
 vtp_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.vtp')]
+# Ordem estável para a paleta não "pular"
+vtp_files = sorted(vtp_files, key=lambda p: os.path.basename(p).lower())
+
+# Estilo fixo para torso (cinza claro translúcido) e demais
+TORSO_COLOR   = (0.90, 0.90, 0.90)
+TORSO_OPACITY = 0.25       # ajuste se quiser mais/menos translúcido
+OUT_OPACITY   = 0.90       # opacidade das outras malhas
+PLANE_OPACITY = 0.25       # opacidade dos planos
+
 if not vtp_files:
     raise Exception("Nenhum arquivo .vtp encontrado na pasta selecionada.")
 
+# Paleta daltônico-safe (Okabe–Ito + extensões suaves), sem cinzas
 color_palette = [
-    [1.0, 0.0, 0.0],   [0.0, 1.0, 0.0],   [1.0, 1.0, 0.0],
-    [0.0, 1.0, 1.0],   [0.5, 0.5, 0.5],   [0.5, 0.0, 0.0],
-    [0.0, 0.5, 0.0],   [0.75, 0.75, 0.0], [0.75, 0.25, 0.0],
-    [0.25, 0.75, 0.5], [0.75, 0.5, 0.25], [0.5, 0.5, 0.0],
-    [0.75, 0.75, 0.75],[1.0, 0.5, 0.0],   [0.0, 1.0, 0.5],
-    [1.0, 0.25, 0.25], [0.25, 1.0, 0.25], [1.0, 0.75, 0.25],
-    [0.25, 1.0, 0.75], [0.5, 0.75, 0.25], [0.75, 0.5, 0.5],
-    [0.5, 0.75, 0.5],  [0.25, 0.25, 0.25],[0.75, 0.6, 0.0],
-    [0.4, 0.7, 0.3],   [0.0, 0.6, 0.6],   [0.8, 0.4, 0.0],
-    [0.6, 0.6, 0.0]
+    [0.90, 0.60, 0.00],  # laranja
+    [0.95, 0.90, 0.25],  # amarelo
+    [0.35, 0.70, 0.90],  # azul-claro
+    [0.00, 0.62, 0.45],  # verde
+    [0.80, 0.47, 0.74],  # roxo
+    [0.80, 0.40, 0.00],  # laranja-escuro
+    [0.36, 0.35, 0.63],  # azul-arroxeado
+    [0.94, 0.55, 0.55],  # vermelho-claro
+    [0.40, 0.76, 0.65],  # verde-acinzentado
+    [0.55, 0.63, 0.80],  # azul acinzentado
+    [0.65, 0.85, 0.33],  # verde-lima
+    [0.90, 0.67, 0.50],  # pêssego
+    [0.55, 0.34, 0.29],  # marrom
+    [0.50, 0.50, 0.00],  # oliva
 ]
+
 
 # Separar malhas para renderização e para projeção dos eletrodos
 render_meshes = []          # tudo que não for "Linha" (continua sendo exibido e com checkbox)
@@ -90,12 +105,39 @@ plotter.camera.elevation = 0.0
 # Renderizar malhas (todas que não são 'Linha')
 file_actor_map = {}
 torso_actors = []
+palette_idx = 0
+
 for i, mesh in enumerate(render_meshes):
-    color = color_palette[i % len(color_palette)]
-    actor = plotter.add_mesh(mesh, color=color, opacity=0.7,
-                             label=f"Mesh {i+1}: {render_filenames[i]}")
-    torso_actors.append(actor)
+    fname_lower = render_filenames[i].lower()
+
+    # Garante normais
+    if 'Normals' not in mesh.point_data:
+        mesh.compute_normals(inplace=True)
+
+    if 'torso' in fname_lower:
+        # Torso sempre cinza claro translúcido
+        actor = plotter.add_mesh(
+            mesh,
+            color=TORSO_COLOR,
+            opacity=TORSO_OPACITY,
+            label=f"Mesh {i+1}: {render_filenames[i]}",
+            smooth_shading=True
+        )
+        torso_actors.append(actor)
+    else:
+        # Demais estruturas com paleta alto-contraste
+        color = color_palette[palette_idx % len(color_palette)]
+        palette_idx += 1
+        actor = plotter.add_mesh(
+            mesh,
+            color=color,
+            opacity=OUT_OPACITY,
+            label=f"Mesh {i+1}: {render_filenames[i]}",
+            smooth_shading=True
+        )
+
     file_actor_map[render_filenames[i]] = actor
+
 
 plotter.add_legend()
 
@@ -191,6 +233,9 @@ is_space_pressed = False
 
 # Novo: modo de snap
 front_snap_enabled = True  # True = fixa no Y mínimo (frente); False = gruda na superfície (laterais possíveis)
+
+# Modo: controles da janela apenas (ignora clique no plotter quando ON)
+window_only_mode = False
 
 def snap_point_to_torso(target_pos):
     """
@@ -367,7 +412,11 @@ def find_lowest_y_for_xz(candidate_point, tol=1.0):
         return candidate_point
 
 def on_left_click(iren, event):
-    global is_preview_active, current_preview_position
+    global is_preview_active, current_preview_position, window_only_mode
+    # Quando ativado, clique não faz nada
+    if window_only_mode:
+        return
+
     if is_preview_active and not is_space_pressed:
         mouse_pos = plotter.pick_mouse_position()
         if mouse_pos is not None:
@@ -375,6 +424,7 @@ def on_left_click(iren, event):
             preview_actor.SetPosition(snapped)
             current_preview_position = snapped
             plotter.render()
+
 
 def move_preview(iren, event):
     global current_preview_position, preview_actor, is_space_pressed
@@ -402,16 +452,6 @@ def move_preview(iren, event):
     current_preview_position = snapped
     plotter.render()
 
-def move_preview2(dx=0, dz=0):
-    global current_preview_position, preview_actor
-    delta = 1.0
-    new_position = np.copy(current_preview_position)
-    new_position[0] += dx * delta
-    new_position[2] += dz * delta
-    snapped = snap_point_to_torso(new_position)
-    preview_actor.SetPosition(snapped)
-    current_preview_position = snapped
-    plotter.render()
 
 
 def capture_key_events(iren, event):
@@ -489,16 +529,18 @@ def import_files():
     print(f"Arquivo '{txt_file_path}' importado com sucesso!")
 
 
-def move_preview2(dx=0, dz=0):
+def move_preview_free(dx=0.0, dy=0.0, dz=0.0, step=1.0):
+    """
+    Move a esfera de preview livremente (sem snap).
+    dx, dy, dz são multiplicados por 'step'.
+    """
     global current_preview_position, preview_actor
-    delta = 1.0
-    new_position = np.copy(current_preview_position)
-    new_position[0] += dx * delta
-    new_position[2] += dz * delta
-    new_position[1] = find_lowest_y_point(new_position)[1]
+    new_position = np.array(preview_actor.GetPosition(), dtype=float)
+    new_position += np.array([dx, dy, dz], dtype=float) * float(step)
     preview_actor.SetPosition(new_position)
     current_preview_position = new_position
     plotter.render()
+
 
 # ---------------------------------------------------
 #   JANELA 1: CONTROLE DE ELETRODOS
@@ -534,41 +576,74 @@ class ControlWindow(QWidget):
         # Botões de movimentação
         # -------------------------
         move_layout = QVBoxLayout()
-        h_layout1 = QHBoxLayout()
-        h_layout2 = QHBoxLayout()
 
-        btn_up = QPushButton("↑")
-        btn_down = QPushButton("↓")
-        btn_left = QPushButton("←")
-        btn_right = QPushButton("→")
+        # Controle de passo (padrão = 1.0)
+        from PyQt5.QtWidgets import QDoubleSpinBox, QLabel
+        step_row = QHBoxLayout()
+        step_label = QLabel("Passo:")
+        self.step_spin = QDoubleSpinBox()
+        self.step_spin.setDecimals(2)
+        self.step_spin.setRange(0.01, 1000.0)
+        self.step_spin.setSingleStep(0.25)
+        self.step_spin.setValue(1.0)
+        step_row.addWidget(step_label)
+        step_row.addWidget(self.step_spin)
+        move_layout.addLayout(step_row)
 
-        timer_up = QTimer()
-        timer_down = QTimer()
-        timer_left = QTimer()
-        timer_right = QTimer()
+        # Helpers para criar par de botões com press-and-hold
+        def make_axis_controls(axis_name, neg_cb, pos_cb):
+            row = QHBoxLayout()
+            btn_neg = QPushButton(f"{axis_name}-")
+            btn_pos = QPushButton(f"{axis_name}+")
+            timer_neg = QTimer()
+            timer_pos = QTimer()
 
-        timer_up.timeout.connect(lambda: move_preview2(dz=1.0))
-        timer_down.timeout.connect(lambda: move_preview2(dz=-1.0))
-        timer_left.timeout.connect(lambda: move_preview2(dx=-1.0))
-        timer_right.timeout.connect(lambda: move_preview2(dx=1.0))
+            def start_neg():
+                neg_cb()
+                timer_neg.start(80)
+            def start_pos():
+                pos_cb()
+                timer_pos.start(80)
 
-        btn_up.pressed.connect(lambda: timer_up.start(100))
-        btn_up.released.connect(timer_up.stop)
-        btn_down.pressed.connect(lambda: timer_down.start(100))
-        btn_down.released.connect(timer_down.stop)
-        btn_left.pressed.connect(lambda: timer_left.start(100))
-        btn_left.released.connect(timer_left.stop)
-        btn_right.pressed.connect(lambda: timer_right.start(100))
-        btn_right.released.connect(timer_right.stop)
+            timer_neg.timeout.connect(neg_cb)
+            timer_pos.timeout.connect(pos_cb)
 
-        h_layout1.addWidget(btn_left)
-        h_layout1.addWidget(btn_up)
-        h_layout1.addWidget(btn_right)
-        h_layout2.addWidget(btn_down)
+            btn_neg.pressed.connect(start_neg)
+            btn_neg.released.connect(timer_neg.stop)
+            btn_pos.pressed.connect(start_pos)
+            btn_pos.released.connect(timer_pos.stop)
 
-        move_layout.addLayout(h_layout1)
-        move_layout.addLayout(h_layout2)
+            row.addWidget(btn_neg)
+            row.addWidget(btn_pos)
+            return row
+
+        def step_value():
+            return float(self.step_spin.value())
+
+        # X-/X+
+        row_x = make_axis_controls(
+            "X",
+            lambda: move_preview_free(dx=-1, dy=0, dz=0, step=step_value()),
+            lambda: move_preview_free(dx=+1, dy=0, dz=0, step=step_value()),
+        )
+        # Y-/Y+
+        row_y = make_axis_controls(
+            "Y",
+            lambda: move_preview_free(dx=0, dy=-1, dz=0, step=step_value()),
+            lambda: move_preview_free(dx=0, dy=+1, dz=0, step=step_value()),
+        )
+        # Z-/Z+
+        row_z = make_axis_controls(
+            "Z",
+            lambda: move_preview_free(dx=0, dy=0, dz=-1, step=step_value()),
+            lambda: move_preview_free(dx=0, dy=0, dz=+1, step=step_value()),
+        )
+
+        move_layout.addLayout(row_x)
+        move_layout.addLayout(row_y)
+        move_layout.addLayout(row_z)
         layout.addLayout(move_layout)
+
 
         # -------------------------
         # Botões principais
@@ -594,29 +669,55 @@ class ControlWindow(QWidget):
         # -------------------------------------------------
         # Toggle: Fixar na frente (Y mínimo) ON/OFF
         # -------------------------------------------------
-        self.btn_toggle_front = QPushButton()
 
-        def refresh_toggle_text():
+        # Botão único de SNAP (frente)
+        self.btn_toggle_front = QPushButton()
+        # Botão de prioridade: somente janela (desativa clique)
+        self.btn_window_only = QPushButton()
+
+        def refresh_toggle_texts():
+            # Snap (frente)
             self.btn_toggle_front.setText(
                 "Fixar na frente (Y mínimo): ON" if front_snap_enabled
                 else "Fixar na frente (Y mínimo): OFF"
             )
+            self.btn_toggle_front.setToolTip(
+                "Quando ON, o clique fixa no Y mínimo (frente). Quando OFF, o clique usa a superfície (laterais OK)."
+            )
+            # Somente janela
+            self.btn_window_only.setText(
+                "Controle somente pela janela: ON" if window_only_mode
+                else "Controle somente pela janela: OFF"
+            )
+            self.btn_window_only.setToolTip(
+                "Quando ON, cliques no torso são ignorados. Os botões X/Y/Z continuam funcionando."
+            )
 
-        refresh_toggle_text()
+        refresh_toggle_texts()
 
         def on_toggle_front():
-            # usa globals já existentes no script
             global front_snap_enabled, current_preview_position
             front_snap_enabled = not front_snap_enabled
-            refresh_toggle_text()
-            # Re-snap imediato do preview para aderir ao novo modo
+            refresh_toggle_texts()
+            # Re-snap do preview para refletir o novo modo de clique (visual)
             snapped = snap_point_to_torso(preview_actor.GetPosition())
             preview_actor.SetPosition(snapped)
             current_preview_position = snapped
             plotter.render()
 
+        def on_toggle_window_only():
+            global window_only_mode
+            window_only_mode = not window_only_mode
+            refresh_toggle_texts()
+            # Sem mais ações: prioridade já é garantida em on_left_click()
+
         self.btn_toggle_front.clicked.connect(on_toggle_front)
+        self.btn_window_only.clicked.connect(on_toggle_window_only)
+
+        # Adiciona ao layout
         layout.addWidget(self.btn_toggle_front)
+        layout.addWidget(self.btn_window_only)
+
 
         # -------------------------
         # Checkboxes dos arquivos
